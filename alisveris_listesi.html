@@ -109,6 +109,12 @@
 <body>
     <div class="container">
         <h1>🛒 Alışveriş Listesi</h1>
+        <div class="settings" style="margin-bottom: 20px; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+            <h3>Ayarlar (GitHub Gist Entegrasyonu)</h3>
+            <label>Gist ID: <input type="text" id="gistId" placeholder="Gist ID'nizi girin" style="width: 100%; margin-bottom: 10px;"></label><br>
+            <label>GitHub Token: <input type="password" id="githubToken" placeholder="Personal Access Token'ınızı girin" style="width: 100%;"></label><br>
+            <small>Not: Token sadece 'gist' scope'una sahip olmalı. Güvenli tutun!</small>
+        </div>
         <div class="input-group">
             <input type="text" id="itemInput" placeholder="Ürün ekleyin..." maxlength="50">
             <button onclick="addItem()">Ekle</button>
@@ -122,9 +128,24 @@
         const itemInput = document.getElementById('itemInput');
         const shoppingList = document.getElementById('shoppingList');
         const stats = document.getElementById('stats');
+        const gistIdInput = document.getElementById('gistId');
+        const githubTokenInput = document.getElementById('githubToken');
 
-        // Sayfa yüklendiğinde localStorage'dan listeyi yükle
-        document.addEventListener('DOMContentLoaded', loadList);
+        // Sayfa yüklendiğinde ayarları yükle ve listeyi getir
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSettings();
+            loadList();
+        });
+
+        function loadSettings() {
+            gistIdInput.value = localStorage.getItem('gistId') || '';
+            githubTokenInput.value = localStorage.getItem('githubToken') || '';
+        }
+
+        function saveSettings() {
+            localStorage.setItem('gistId', gistIdInput.value);
+            localStorage.setItem('githubToken', githubTokenInput.value);
+        }
 
         function addItem() {
             const itemText = itemInput.value.trim();
@@ -182,7 +203,15 @@
             updateStats();
         }
 
-        function saveList() {
+        async function saveList() {
+            saveSettings(); // Ayarları kaydet
+            const gistId = gistIdInput.value.trim();
+            const token = githubTokenInput.value.trim();
+            if (!gistId || !token) {
+                alert('Lütfen Gist ID ve GitHub Token\'ınızı girin.');
+                return;
+            }
+
             const items = [];
             shoppingList.querySelectorAll('.list-item').forEach(li => {
                 items.push({
@@ -190,15 +219,50 @@
                     completed: li.classList.contains('completed')
                 });
             });
-            localStorage.setItem('shoppingList', JSON.stringify(items));
+
+            const data = {
+                files: {
+                    'shopping-list.json': {
+                        content: JSON.stringify(items, null, 2)
+                    }
+                }
+            };
+
+            try {
+                const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `token ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                if (!response.ok) throw new Error('Gist güncellenemedi');
+            } catch (error) {
+                alert('Hata: ' + error.message);
+            }
         }
 
-        function loadList() {
-            const savedItems = JSON.parse(localStorage.getItem('shoppingList') || '[]');
-            savedItems.forEach(item => {
-                const li = createListItem(item.text, item.completed);
-                shoppingList.appendChild(li);
-            });
+        async function loadList() {
+            const gistId = gistIdInput.value.trim();
+            const token = githubTokenInput.value.trim();
+            if (!gistId || !token) return; // Eğer ayarlar yoksa, boş liste
+
+            try {
+                const response = await fetch(`https://api.github.com/gists/${gistId}`);
+                if (!response.ok) throw new Error('Gist yüklenemedi');
+                const gist = await response.json();
+                const content = gist.files['shopping-list.json']?.content;
+                if (content) {
+                    const savedItems = JSON.parse(content);
+                    savedItems.forEach(item => {
+                        const li = createListItem(item.text, item.completed);
+                        shoppingList.appendChild(li);
+                    });
+                }
+            } catch (error) {
+                alert('Hata: ' + error.message);
+            }
             updateStats();
         }
 
@@ -214,6 +278,10 @@
                 addItem();
             }
         });
+
+        // Ayarlar değiştiğinde listeyi yeniden yükle
+        gistIdInput.addEventListener('change', loadList);
+        githubTokenInput.addEventListener('change', loadList);
     </script>
 </body>
 </html>
